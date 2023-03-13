@@ -8,7 +8,7 @@ import (
 	"github.com/google/go-github/v28/github"
 	"github.com/tj/go-semver"
 
-	"github.com/tj/gobinaries"
+	"github.com/skrashevich/gobinaries"
 )
 
 // GitHub is an implementation of Versioner for

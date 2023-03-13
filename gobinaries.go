@@ -25,12 +25,16 @@ type Resolver interface {
 type Storage interface {
 	Create(context.Context, io.Reader, Binary) error
 	Get(context.Context, Binary) (io.ReadCloser, error)
+	SetPrefix(prefix string)
 }
 
 // Binary represents the details of a package binary.
 type Binary struct {
 	// Path is the command path such as "github.com/tj/staticgen/cmd/staticgen".
 	Path string
+
+	//CGO enable of Go packages that call C code. "0" is disable and default value, "1" is enable
+	CGO string
 
 	// Module path such as "github.com/tj/staticgen".
 	Module string

@@ -18,8 +18,8 @@ import (
 	"github.com/tj/go/http/request"
 	"github.com/tj/go/http/response"
 
-	"github.com/tj/gobinaries"
-	"github.com/tj/gobinaries/build"
+	"github.com/skrashevich/gobinaries"
+	"github.com/skrashevich/gobinaries/build"
 )
 
 // Server is the binary server.
@@ -182,6 +182,11 @@ func (s *Server) getScript(w http.ResponseWriter, r *http.Request) {
 //
 // For example "github.com/tj/triage/cmd/triage?os=linux&arch=amd64&version=1.0.0".
 //
+// And not required:
+//
+// - cgo = default 0
+//
+// For example "github.com/tj/triage/cmd/triage?os=linux&arch=amd64&cgo=1&version=1.0.0".
 func (s *Server) getBinary(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	pkg := strings.TrimPrefix(r.URL.Path, "/")
@@ -189,6 +194,11 @@ func (s *Server) getBinary(w http.ResponseWriter, r *http.Request) {
 	if pkg == "" {
 		response.BadRequest(w)
 		return
+	}
+
+	cgo := request.Param(r, "cgo")
+	if cgo == "" {
+		cgo = "0"
 	}
 
 	goos := request.Param(r, "os")
@@ -220,12 +230,16 @@ func (s *Server) getBinary(w http.ResponseWriter, r *http.Request) {
 	})
 
 	bin := gobinaries.Binary{
+		CGO:     cgo,
 		Path:    pkg,
 		Module:  mod,
 		Version: version,
 		OS:      goos,
 		Arch:    arch,
 	}
+
+	homedir, _ := os.UserHomeDir()
+	s.Storage.SetPrefix(filepath.Join(homedir, ".gobinaries", "storage"))
 
 	// respond with the object if it already exists in storage
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)

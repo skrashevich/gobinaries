@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tj/gobinaries"
+	"github.com/skrashevich/gobinaries"
 )
 
 // environMap returns a map of environment variables.
@@ -54,39 +54,27 @@ func (e Error) Error() string {
 // Write a package binary to w.
 func Write(w io.Writer, bin gobinaries.Binary) error {
 	dir, err := os.UserHomeDir()
+	dir = filepath.Join(dir, ".cache", "gobinaries", bin.Module)
 	if err != nil {
 		return fmt.Errorf("user home dir: %w", err)
 	}
 
-	// remove the old go.mod if there is one
-	err = os.Remove(filepath.Join(dir, "go.mod"))
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("removing go.mod: %w", err)
-	}
-
-	// create a go.mod file, this is currently required
-	// in order to install a package with a specified version
-	err = addModule(dir)
+	err = install(bin, dir)
 	if err != nil {
-		return fmt.Errorf("initializing module: %w", err)
+		return fmt.Errorf("tidy module: %w", err)
 	}
-
-	// add the dependency
-	err = addModuleDep(dir, normalizeModuleDep(bin))
+	var dst string
+	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && info.Mode().Perm()&0111 != 0 { // check if file is executable
+			dst = path
+		}
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("adding dependency: %w", err)
-	}
-
-	// tmpfile for the binary
-	dst, err := tempFilename()
-	if err != nil {
-		return fmt.Errorf("creating tempfile: %w", err)
-	}
-
-	// build the binary
-	err = buildBinary(dir, dst, bin)
-	if err != nil {
-		return fmt.Errorf("building: %w", err)
+		fmt.Println(err)
 	}
 
 	// check permissions and copy it to w
@@ -114,11 +102,10 @@ func Write(w io.Writer, bin gobinaries.Binary) error {
 		return fmt.Errorf("closing: %w", err)
 	}
 
-	err = os.Remove(dst)
+	err = os.RemoveAll(dir)
 	if err != nil {
-		return fmt.Errorf("removing tempfile: %w", err)
+		return fmt.Errorf("cleaning: %w", err)
 	}
-
 	return nil
 }
 
@@ -141,6 +128,23 @@ func addModule(dir string) error {
 	cmd.Env = environ()
 	cmd.Env = append(cmd.Env, "GO111MODULE=on")
 	cmd.Dir = dir
+	return command(cmd)
+}
+
+func install(bin gobinaries.Binary, dir string) error {
+	ldflags := fmt.Sprintf("-s -w -X main.version=%s", bin.Version)
+	cmd := exec.Command("go", "install", "-trimpath", "-ldflags", ldflags, bin.Module+"/...@"+bin.Version)
+	cmd.Env = environ()
+	cmd.Env = append(cmd.Env, "GOPATH="+dir)
+	cmd.Env = append(cmd.Env, "CGO_ENABLED="+bin.CGO)
+	cmd.Env = append(cmd.Env, "GOOS="+bin.OS)
+	if strings.HasPrefix(bin.Arch, "armv") {
+		cmd.Env = append(cmd.Env, "GOARCH=arm")
+		cmd.Env = append(cmd.Env, "GOARM="+strings.TrimPrefix(bin.Arch, "armv"))
+	} else {
+		cmd.Env = append(cmd.Env, "GOARCH="+bin.Arch)
+	}
+	cmd.Dir, _ = os.UserHomeDir()
 	return command(cmd)
 }
 
@@ -172,19 +176,6 @@ func addModuleDep(dir, dep string) error {
 	cmd := exec.Command("go", "mod", "edit", "-require", dep)
 	cmd.Env = environ()
 	cmd.Env = append(cmd.Env, "GO111MODULE=on")
-	cmd.Dir = dir
-	return command(cmd)
-}
-
-// buildBinary performs a `go build` and outputs the binary to dst.
-func buildBinary(dir, dst string, bin gobinaries.Binary) error {
-	ldflags := fmt.Sprintf("-X main.version=%s", bin.Version)
-	cmd := exec.Command("go", "build", "-o", dst, "-ldflags", ldflags, bin.Path)
-	cmd.Env = environ()
-	cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
-	cmd.Env = append(cmd.Env, "GO111MODULE=on")
-	cmd.Env = append(cmd.Env, "GOOS="+bin.OS)
-	cmd.Env = append(cmd.Env, "GOARCH="+bin.Arch)
 	cmd.Dir = dir
 	return command(cmd)
 }

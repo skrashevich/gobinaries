@@ -9,8 +9,8 @@ import (
 	"github.com/tj/go/env"
 	"golang.org/x/oauth2"
 
-	"github.com/tj/gobinaries"
-	"github.com/tj/gobinaries/resolver"
+	"github.com/skrashevich/gobinaries"
+	"github.com/skrashevich/gobinaries/resolver"
 )
 
 // newResolver returns a new GitHub resolver.
